@@ -1,7 +1,7 @@
 ## 🔍 Security Check
 This is the `.exe` file scanned on **VirusTotal**, to ensure it's safe.
 
-🔗 [https://www.virustotal.com/gui/file/65a38fc0de3130e7eb073978155bdad4107abe91397b7b5f1ffaab7bce2ceab2/detection]
+🔗 [https://tinyurl.com/3prbpt8x]
 
 ## 🎮 How to Play
 
