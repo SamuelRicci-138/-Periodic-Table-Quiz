@@ -3,7 +3,7 @@ This is the `.exe` file scanned on **VirusTotal**, to ensure it's safe.
 
 🔗 [https://www.virustotal.com/gui/file/65a38fc0de3130e7eb073978155bdad4107abe91397b7b5f1ffaab7bce2ceab2/detection]
 
-🎮 How to Play
+##🎮 How to Play
 
 1. Right-click anywhere to start the quiz.
 
