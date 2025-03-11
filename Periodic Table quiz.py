@@ -335,3 +335,5 @@ root.after_idle(perform_resize)
 
 update_timer()
 root.mainloop()
+
+
