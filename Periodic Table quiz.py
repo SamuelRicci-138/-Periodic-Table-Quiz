@@ -187,9 +187,9 @@ root = tk.Tk()
 root.title("Periodic Table Quiz")
 root.configure(bg=WOOD_BACKGROUND)
 
-# Set the window size to 1280x720 and center it on the screen
-window_width = 1280
-window_height = 720
+# Set the window size to 750x500 and center it on the screen
+window_width = 750
+window_height = 500
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
 x = int((screen_width - window_width) / 2)
