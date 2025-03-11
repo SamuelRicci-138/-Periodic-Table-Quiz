@@ -13,13 +13,17 @@ INCORRECT_COLOR       = "#CD5C5C"
 RESET_COLOR           = "#E0CDA9"
 TEXT_COLOR            = "#3E2723"
 
-# 🖋 Base Font (sizes will be scaled dynamically)
+# Nuove costanti per il lampeggio (toni di rosso chiaro)
+LIGHT_RED    = "#FF9999"
+LIGHTER_RED  = "#FFCCCC"
+
+# 🖋 Base Font (i font verranno scalati dinamicamente)
 BASE_TITLE_SIZE    = 36
 BASE_LABEL_SIZE    = 28
 BASE_BUTTON_SIZE   = 18
 BASE_QUESTION_SIZE = 48
 
-# 🔬 List of elements: (Name, Symbol)
+# 🔬 Lista degli elementi: (Nome, Simbolo)
 elements = [
     ('Hydrogen', 'H'), ('Helium', 'He'), ('Lithium', 'Li'), ('Beryllium', 'Be'),
     ('Boron', 'B'), ('Carbon', 'C'), ('Nitrogen', 'N'), ('Oxygen', 'O'),
@@ -49,7 +53,7 @@ elements = [
     ('Mendelevium', 'Md'), ('Nobelium', 'No'), ('Lawrencium', 'Lr')
 ]
 
-# 📐 Positions of the elements in the table (row, column)
+# 📐 Posizioni degli elementi nella tavola (riga, colonna)
 element_positions = {
     'H': (0, 0), 'He': (0, 17),
     'Li': (1, 0), 'Be': (1, 1), 'B': (1, 12), 'C': (1, 13), 'N': (1, 14),
@@ -70,7 +74,7 @@ element_positions = {
     'Tl': (5, 12), 'Pb': (5, 13), 'Bi': (5, 14), 'Po': (5, 15), 'At': (5, 16), 'Rn': (5, 17),
     'Fr': (6, 0), 'Ra': (6, 1),
     'Ac': (6, 2),
-    # Lanthanides and Actinides
+    # Lanthanidi e Attinidi
     'Th': (8, 4), 'Pa': (8, 5), 'U': (8, 6), 'Np': (8, 7),
     'Pu': (8, 8), 'Am': (8, 9), 'Cm': (8, 10), 'Bk': (8, 11), 'Cf': (8, 12),
     'Es': (8, 13), 'Fm': (8, 14), 'Md': (8, 15), 'No': (8, 16), 'Lr': (8, 17),
@@ -79,10 +83,10 @@ element_positions = {
     'Er': (7, 14), 'Tm': (7, 15), 'Yb': (7, 16), 'Lu': (7, 17)
 }
 
-# Helper map: from element name to symbol
+# Mappa di supporto: da nome a simbolo
 name_to_symbol = {name: symbol for name, symbol in elements if symbol in element_positions}
 
-# 🎮 Game state variables
+# 🎮 Variabili di stato del gioco
 current_element     = None
 score               = 0
 total_questions     = 0
@@ -90,10 +94,17 @@ next_question_ready = False
 game_started        = False
 start_time          = 0
 elapsed_time        = 0
-completed_elements  = set()   # names of elements already used
-last_answered       = None      # last element answered
+completed_elements  = set()   # nomi degli elementi già usati
+last_answered       = None      # ultimo elemento risposto
 
-# Global variable for debouncing resize
+# Variabile per indicare se il quiz è completato
+quiz_completed = False
+
+# Variabili globali per il lampeggio del pulsante Reset
+blink_state = False
+blink_job   = None
+
+# Variabile globale per il debouncing del ridimensionamento
 resize_after_id = None
 
 def format_time(total_seconds):
@@ -135,27 +146,56 @@ def reset_button_colors():
         if name not in completed_elements:
             button.config(bg=WOOD_BUTTON_COLOR, fg=TEXT_COLOR, activebackground=WOOD_ACTIVE_COLOR)
 
+def blink_reset_button():
+    global blink_state, blink_job
+    if blink_state:
+        reset_button.config(bg=LIGHT_RED, activebackground=LIGHT_RED)
+        blink_state = False
+    else:
+        reset_button.config(bg=LIGHTER_RED, activebackground=LIGHTER_RED)
+        blink_state = True
+    blink_job = root.after(500, blink_reset_button)
+
+def start_blinking():
+    global blink_state, blink_job
+    # Se il lampeggio è già attivo, non ne creo un nuovo ciclo
+    if blink_job is not None:
+        return
+    blink_state = False
+    blink_reset_button()
+
+def stop_blinking():
+    global blink_job
+    if blink_job is not None:
+        root.after_cancel(blink_job)
+        blink_job = None
+
 def next_question():
-    global current_element, game_started
+    global current_element, game_started, quiz_completed
     available = [(name, symbol) for (name, symbol) in elements 
                  if name not in completed_elements and symbol in element_positions]
     if available:
         current_element, _ = random.choice(available)
         question_label.config(text=f"{current_element}")
     else:
-        question_label.config(text="Quiz completed! Click Reset to restart.")
+        # Nessuna domanda disponibile: il quiz è completato
+        question_label.config(text="Quiz completed!")
+        start_blinking()
         game_started = False
+        quiz_completed = True
 
 def update_score_label():
     score_label.config(text=f"Score: {score}/{total_questions}")
 
 def reset_game():
-    global score, total_questions, next_question_ready, game_started
+    global score, total_questions, next_question_ready, game_started, quiz_completed
     global start_time, elapsed_time, current_element, completed_elements, last_answered
+    stop_blinking()  # Ferma il lampeggio se attivo
     score = 0
     total_questions = 0
     next_question_ready = False
     game_started = False
+    quiz_completed = False
     start_time = 0
     elapsed_time = 0
     current_element = None
@@ -163,15 +203,22 @@ def reset_game():
     last_answered = None
     question_label.config(text="Right click to start")
     update_score_label()
+    # Ripristina il colore originale del pulsante Reset
+    reset_button.config(bg=RESET_COLOR, activebackground=RESET_COLOR)
     for name, button in button_map.items():
         button.config(bg=WOOD_BUTTON_COLOR, fg=TEXT_COLOR, state="normal", activebackground=WOOD_ACTIVE_COLOR)
 
 def on_right_click(event):
-    global next_question_ready, game_started, start_time, last_answered
+    global next_question_ready, game_started, start_time, last_answered, quiz_completed
+    # Se il quiz è completato, ignora il click destro per non interferire con il lampeggio
+    if quiz_completed:
+        return
+    # Se il gioco non è ancora iniziato, avvialo
     if not game_started:
         game_started = True
         next_question()
         start_timer()
+    # Se il gioco è in corso e la risposta è pronta, passa alla domanda successiva
     elif next_question_ready:
         if last_answered is not None:
             button_map[last_answered].config(bg=COMPLETED_COLOR, fg=COMPLETED_TEXT_COLOR,
@@ -182,12 +229,12 @@ def on_right_click(event):
         next_question_ready = False
         start_timer()
 
-# ── Create the main window ──
+# ── Creazione della finestra principale ──
 root = tk.Tk()
 root.title("Periodic Table Quiz")
 root.configure(bg=WOOD_BACKGROUND)
 
-# Set the window size to 750x500 and center it on the screen
+# Dimensioni della finestra: 750x500, centrata
 window_width = 750
 window_height = 500
 screen_width = root.winfo_screenwidth()
@@ -196,7 +243,7 @@ x = int((screen_width - window_width) / 2)
 y = int((screen_height - window_height) / 2)
 root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-# Top frame: header, reset button, timer, score and question label
+# Top frame: header, pulsante Reset, timer, punteggio e question label
 top_frame = tk.Frame(root, bg=WOOD_BACKGROUND)
 top_frame.pack(side="top", fill="x", pady=10)
 
@@ -220,15 +267,15 @@ timer_label.pack(side="left", padx=20)
 score_label = tk.Label(info_frame, text="Score: 0/0", bg=WOOD_BACKGROUND, fg=TEXT_COLOR, width=15)
 score_label.pack(side="left", padx=20)
 
-# The question label always uses a large font to avoid later realignments.
+# La question label usa un font grande, senza spingere la tavola verso il basso
 question_label = tk.Label(top_frame, text="Right click to start", bg=WOOD_BACKGROUND, fg=TEXT_COLOR)
 question_label.pack(pady=10)
 
-# Frame for the periodic table grid
+# Frame per la griglia della tavola periodica
 grid_frame = tk.Frame(root, bg=WOOD_BACKGROUND)
 grid_frame.pack(side="top", fill="both", expand=True)
 
-# Map for the buttons (key: element name)
+# Mappa dei pulsanti (chiave: nome elemento)
 button_map = {}
 
 for name, symbol in elements:
@@ -238,7 +285,7 @@ for name, symbol in elements:
         btn.config(command=lambda n=name, b=btn: on_element_click(n, b) if game_started else None)
         button_map[name] = btn
 
-# ── Function to reposition and resize the grid buttons ──
+# ── Funzione per riposizionare e ridimensionare i pulsanti della griglia ──
 def resize_buttons():
     width = grid_frame.winfo_width()
     height = grid_frame.winfo_height()
@@ -252,9 +299,8 @@ def resize_buttons():
             y_pos = row * btn_height
             btn.place(x=x_pos, y=y_pos, width=btn_width, height=btn_height)
 
-# ── Function to dynamically update font sizes ──
+# ── Funzione per aggiornare dinamicamente le dimensioni dei font ──
 def update_fonts():
-    # Calculate a scaling factor based on a reference window of 1000x600
     factor = min(root.winfo_width() / 1000, root.winfo_height() / 600)
     new_title_size    = max(8, int(BASE_TITLE_SIZE * factor))
     new_label_size    = max(8, int(BASE_LABEL_SIZE * factor))
@@ -269,7 +315,7 @@ def update_fonts():
     for btn in button_map.values():
         btn.config(font=("Georgia", new_button_size, "bold"))
 
-# ── Debounced function for resizing ──
+# ── Funzione di debouncing per il ridimensionamento ──
 def on_resize(event=None):
     global resize_after_id
     if resize_after_id is not None:
@@ -279,16 +325,12 @@ def on_resize(event=None):
 def perform_resize():
     update_fonts()
     resize_buttons()
+    question_label.config(wraplength=root.winfo_width() - 20)
     global resize_after_id
     resize_after_id = None
 
-# Binding the <Configure> event for window resizing with debouncing
 root.bind("<Configure>", on_resize)
-
-# Binding right click to handle starting and moving to the next question
 root.bind("<Button-3>", on_right_click)
-
-# Run an immediate layout update after the first rendering to ensure consistent positioning
 root.after_idle(perform_resize)
 
 update_timer()
