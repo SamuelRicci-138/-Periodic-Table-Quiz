@@ -1,6 +1,7 @@
 import tkinter as tk
 import random
 import time
+from tkinter import ttk
 
 # 🎨 Wood Style Color Palette
 WOOD_BACKGROUND       = "#DEB887"
@@ -104,8 +105,17 @@ quiz_completed = False
 blink_state = False
 blink_job   = None
 
-# Variabile globale per il debouncing del ridimensionamento
+# Variabili globali per il debouncing del ridimensionamento e per l'overlay
 resize_after_id = None
+freeze_overlay = None
+freeze_start_time = None  # Per registrare il tempo in cui l'overlay viene mostrato
+
+# Tempo minimo di visualizzazione dell'overlay in millisecondi (ora 500ms)
+MIN_LOADING_TIME = 500
+
+# Variabili globali per memorizzare le dimensioni precedenti della finestra
+prev_width = None
+prev_height = None
 
 def format_time(total_seconds):
     total_seconds = int(total_seconds)
@@ -158,7 +168,6 @@ def blink_reset_button():
 
 def start_blinking():
     global blink_state, blink_job
-    # Se il lampeggio è già attivo, non ne creo un nuovo ciclo
     if blink_job is not None:
         return
     blink_state = False
@@ -178,7 +187,6 @@ def next_question():
         current_element, _ = random.choice(available)
         question_label.config(text=f"{current_element}")
     else:
-        # Nessuna domanda disponibile: il quiz è completato
         question_label.config(text="Quiz completed!")
         start_blinking()
         game_started = False
@@ -190,7 +198,7 @@ def update_score_label():
 def reset_game():
     global score, total_questions, next_question_ready, game_started, quiz_completed
     global start_time, elapsed_time, current_element, completed_elements, last_answered
-    stop_blinking()  # Ferma il lampeggio se attivo
+    stop_blinking()
     score = 0
     total_questions = 0
     next_question_ready = False
@@ -203,22 +211,18 @@ def reset_game():
     last_answered = None
     question_label.config(text="Right click to start")
     update_score_label()
-    # Ripristina il colore originale del pulsante Reset
     reset_button.config(bg=RESET_COLOR, activebackground=RESET_COLOR)
     for name, button in button_map.items():
         button.config(bg=WOOD_BUTTON_COLOR, fg=TEXT_COLOR, state="normal", activebackground=WOOD_ACTIVE_COLOR)
 
 def on_right_click(event):
     global next_question_ready, game_started, start_time, last_answered, quiz_completed
-    # Se il quiz è completato, ignora il click destro per non interferire con il lampeggio
     if quiz_completed:
         return
-    # Se il gioco non è ancora iniziato, avvialo
     if not game_started:
         game_started = True
         next_question()
         start_timer()
-    # Se il gioco è in corso e la risposta è pronta, passa alla domanda successiva
     elif next_question_ready:
         if last_answered is not None:
             button_map[last_answered].config(bg=COMPLETED_COLOR, fg=COMPLETED_TEXT_COLOR,
@@ -267,7 +271,6 @@ timer_label.pack(side="left", padx=20)
 score_label = tk.Label(info_frame, text="Score: 0/0", bg=WOOD_BACKGROUND, fg=TEXT_COLOR, width=15)
 score_label.pack(side="left", padx=20)
 
-# La question label usa un font grande, senza spingere la tavola verso il basso
 question_label = tk.Label(top_frame, text="Right click to start", bg=WOOD_BACKGROUND, fg=TEXT_COLOR)
 question_label.pack(pady=10)
 
@@ -315,9 +318,38 @@ def update_fonts():
     for btn in button_map.values():
         btn.config(font=("Georgia", new_button_size, "bold"))
 
+# ── Funzione per congelare la schermata con un overlay ──
+def freeze_screen():
+    global freeze_start_time
+    freeze_start_time = time.perf_counter()  # Registra il tempo di inizio overlay
+    overlay = tk.Frame(root, bg=WOOD_BACKGROUND)
+    overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+    loading_label = tk.Label(overlay, text="Loading...", font=("Georgia", BASE_TITLE_SIZE),
+                              bg=WOOD_BACKGROUND, fg=TEXT_COLOR)
+    loading_label.pack(expand=True)
+    progress_bar = ttk.Progressbar(overlay, mode='indeterminate')
+    progress_bar.pack(fill='x', padx=20, pady=10)
+    progress_bar.start(10)
+    return overlay
+
+def destroy_overlay():
+    global freeze_overlay, freeze_start_time
+    if freeze_overlay is not None:
+        freeze_overlay.destroy()
+        freeze_overlay = None
+        freeze_start_time = None
+
 # ── Funzione di debouncing per il ridimensionamento ──
 def on_resize(event=None):
-    global resize_after_id
+    global prev_width, prev_height, resize_after_id, freeze_overlay
+    new_width = root.winfo_width()
+    new_height = root.winfo_height()
+    if prev_width is None or prev_height is None:
+        prev_width, prev_height = new_width, new_height
+    if new_width != prev_width or new_height != prev_height:
+        if freeze_overlay is None:
+            freeze_overlay = freeze_screen()
+        prev_width, prev_height = new_width, new_height
     if resize_after_id is not None:
         root.after_cancel(resize_after_id)
     resize_after_id = root.after(100, perform_resize)
@@ -326,14 +358,29 @@ def perform_resize():
     update_fonts()
     resize_buttons()
     question_label.config(wraplength=root.winfo_width() - 20)
-    global resize_after_id
+    root.update_idletasks()
+    
+    def finalize_resize():
+        update_fonts()
+        resize_buttons()
+        question_label.config(wraplength=root.winfo_width() - 20)
+        # Calcola il tempo trascorso e attende fino a MIN_LOADING_TIME
+        elapsed_ms = (time.perf_counter() - freeze_start_time) * 1000 if freeze_start_time else 0
+        remaining = int(MIN_LOADING_TIME - elapsed_ms)
+        if remaining > 0:
+            root.after(remaining, destroy_overlay)
+        else:
+            destroy_overlay()
+    root.after(50, finalize_resize)
     resize_after_id = None
 
 root.bind("<Configure>", on_resize)
 root.bind("<Button-3>", on_right_click)
+
+# Faccio comparire l'overlay anche al primo lancio
+freeze_overlay = freeze_screen()
 root.after_idle(perform_resize)
 
 update_timer()
 root.mainloop()
-
 
